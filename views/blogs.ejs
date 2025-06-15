@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" >
+        <title>Blogs</title>
+    </head>
+    <body>
+        <% if (user) { %>
+            <p>Welcome <%= user.email %> to your blogs</p>
+            <p>Below is a list of all your blogs</p>
+            <ul>
+                <% blogs.forEach(function(blog){ %>
+                <li><%= blog.title %></li>
+            <% }); %>
+            </ul>
+            <br />
+            <form action="/logout" method="post">
+                <button type="submit">Logout</button>
+            </form>
+        
+        <% } else { <% 
+            <p>Please <a href="/login">login</a> to view your blog list</p>
+            <%} %>
+    </body>
+</html>
