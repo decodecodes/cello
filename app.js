@@ -11,7 +11,7 @@ require("dotenv").config()
 
 require("./authentication/auth")
 
-const PORT = process.env.PORT
+const PORT = process.env.PORT || 8000
 const app = express()
 
 app.set('view engine', 'ejs')
@@ -79,6 +79,6 @@ app.use(function (err, req, res, next) {
 
 
 app.listen(PORT, () => {
-    console.log(`Server started on PORT: http://localhost:${PORT}`)
+    console.log(`Server started on PORT: ${PORT}`)
 
 })
