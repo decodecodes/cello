@@ -4,7 +4,7 @@ const bodyParser = require('body-parser')
 
 const BlogRoute = require("./routes/blogs")
 const authRoute = require('./routes/auth')
-const BlogsModel = require('./model/')
+const BlogsModel = require('./model/blogs')
 
 const { connectDB } = require("./db")
 require("dotenv").config()
