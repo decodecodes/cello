@@ -7,8 +7,8 @@ const authRouter = express.Router()
 
 authRouter.post(
     '/signup',
-    passport.authenticate('signup', { session: false }), async (req, resizeBy, next) => {
-        resizeBy.json({
+    passport.authenticate('signup', { session: false }), async (req, res, next) => {
+        res.json({
             message: "Sign up Successful",
             user: req.user
         })
@@ -32,7 +32,7 @@ authRouter.post(
                     async (error) => {
                         if (error) return next(error);
 
-                        const body = { _id: user._id, email: user.email, firstname: user.firstname, lastname: user.lastname };
+                        const body = { _id: user._id, email: user.email };
                         const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
                         return res.json({ token });

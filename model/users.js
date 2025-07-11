@@ -4,16 +4,6 @@ const bcrypt = require('bcrypt')
 const Schema = mongoose.Schema
 
 const UserSchema = new Schema({
-    firstname: {
-        type: String,
-        required: true
-
-    },
-    lastname: {
-        type: String,
-        required: true
-
-    },
     email: {
         type: String,
         required: true,
@@ -23,12 +13,28 @@ const UserSchema = new Schema({
     },
     password: {
         type: String,
-        minlength: [6, 'Password must contain more than 6 characters'],
-        required: true
-
+        minlength: [8, 'Password must contain more than 8 characters'],
+        required: true,
+        validate: {
+            validator: function(password) {
+                if (!/[A-Z]/.test(password)) {
+                    return false;
+                }
+                if (!/[0-9]/.test(password)) {
+                    return false;
+                }
+                if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+                    return false;
+                }
+                return true;
+            },
+            message: 'Password must contain at least 1 capital letter, 1 number, and 1 special character'
+        }
     }
-
 })
+
+        
+
 
 UserSchema.pre(
     'save',

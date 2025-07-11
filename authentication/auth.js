@@ -25,29 +25,33 @@ passport.use(
     'signup',
     new localStrategy(
         {
-            firstnameField: 'firstname',
-            lastnameField: 'lastname',
-            emailField: 'email',
-            passwordField: 'password'
+            usernameField: 'email',
+            passwordField: 'password',
+            passReqToCallback: true
         },
-        async (firstname, lastname, email, password, done) => {
-            try {
-                const user = await UserModel.create({ firstname, lastname, email, password });
-
-                return done(null, user);
-            } catch (error) {
-                done(error);
-            }
+        async (req, email, password, done) => {
+    try {
+        const { confirmPassword } = req.body;
+        
+        if (password !== confirmPassword) {
+            return done(null, false, { message: 'Passwords do not match' });
         }
-    )
-
-)
+        
+        // Create user (your existing logic)
+        const user = await UserModel.create({ email, password });
+        return done(null, user);
+        
+    } catch (error) {
+        return done(error);
+    }
+}));
+      
 
 passport.use(
     'login',
     new localStrategy(
         {
-            emailField: 'email',
+            usernameField: 'email',
             passwordField: 'password'
         },
         async (email, password, done) => {
