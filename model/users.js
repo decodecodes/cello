@@ -31,16 +31,48 @@ const UserSchema = new Schema({
             message: 'Password must contain at least 1 capital letter, 1 number, and 1 special character'
         }
     },
-    isEmailVerified: {
-        type: Boolean,
-        default: false
-    },
-    verificationCode: {
-        type: String
-    },
-    verificationCodeExpiry:{
-
+   name: {
+    type: String,
+    required: function() {
+      // Name is required only for OAuth users (Google/Apple provide it)
+      return this.isOAuthUser;
     }
+  },
+  profilePicture: {
+    type: String,
+    default: null
+  },
+  // OAuth provider fields
+  googleId: {
+    type: String,
+    sparse: true
+  },
+  appleId: {
+    type: String,
+    sparse: true
+  },
+  signupMethod: {
+    type: String,
+    enum: ['manual', 'google', 'apple'],
+    default: 'manual'
+  },
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
+  verificationCode: {
+    type: String
+  },
+  verificationCodeExpiry: {
+    type: Date
+  },
+  // OAuth users are considered verified
+  isOAuthUser: {
+    type: Boolean,
+    default: false
+  }
+}, {
+  timestamps: true
     
 })
 
@@ -64,6 +96,53 @@ UserSchema.methods.isValidPassword = async function(password) {
 
     return compare;
 }
+
+// Static method to find or create OAuth user
+UserSchema.statics.findOrCreateOAuthUser = async function(profile, provider) {
+  try {
+    const providerId = provider === 'google' ? 'googleId' : 'appleId';
+    
+    // First try to find user by provider ID
+    let user = await this.findOne({ [providerId]: profile.id });
+    
+    if (user) {
+      return { user, isNew: false };
+    }
+    
+    // If not found, check if user exists with same email
+    user = await this.findOne({ email: profile.email });
+    
+    if (user) {
+      // Link existing account with OAuth provider
+      user[providerId] = profile.id;
+      user.isOAuthUser = true;
+      user.isEmailVerified = true;
+      if (!user.profilePicture && profile.picture) {
+        user.profilePicture = profile.picture;
+      }
+      await user.save();
+      return { user, isNew: false };
+    }
+    
+    // Create new user
+    user = new this({
+      email: profile.email,
+      name: profile.name,
+      profilePicture: profile.picture || null,
+      [providerId]: profile.id,
+      signupMethod: provider,
+      isOAuthUser: true,
+      isEmailVerified: true
+    });
+    
+    await user.save();
+    return { user, isNew: true };
+    
+  } catch (error) {
+    throw new Error(`OAuth user creation failed: ${error.message}`);
+  }
+};
+
 
 const UserModel = mongoose.model('users', UserSchema);
 

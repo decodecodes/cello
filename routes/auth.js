@@ -187,6 +187,18 @@ const handleEmailVerification = async (email) => {
   }
 };
 
+const handleOAuthSuccess = async (req, res) => {
+  try {
+    const body = { _id: req.user._id, email: req.user.email };
+    const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    
+    // Redirect to your frontend with token
+    // You can customize this redirect URL based on your frontend setup
+    res.redirect(`${process.env.CLIENT_URL}/auth/success?token=${token}`);
+  } catch (error) {
+    res.redirect(`${process.env.CLIENT_URL}/auth/error`);
+  }}
+
 require('dotenv').config()
 
 const authRouter = express.Router()
@@ -254,6 +266,146 @@ authRouter.post(
     }
 )
 
+authRouter.post('/oauth/mobile/google', async (req, res) => {
+    try {
+        const { idToken } = req.body;
+        
+        // Verify the Google ID token
+        const { OAuth2Client } = require('google-auth-library');
+        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+        
+        const ticket = await client.verifyIdToken({
+            idToken: idToken,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        
+        const payload = ticket.getPayload();
+        const { sub: googleId, email, name, picture } = payload;
+        
+        // Find or create user
+        let user = await UsersModel.findOne({ 
+            $or: [
+                { googleId: googleId },
+                { email: email }
+            ]
+        });
+        
+        if (!user) {
+            user = new UsersModel({
+                email: email,
+                name: name,
+                googleId: googleId,
+                profilePicture: picture,
+                isEmailVerified: true, // Google emails are pre-verified
+                provider: 'google'
+            });
+            await user.save();
+        } else if (!user.googleId) {
+            // Link existing account with Google
+            user.googleId = googleId;
+            user.profilePicture = picture || user.profilePicture;
+            user.isEmailVerified = true;
+            await user.save();
+        }
+        
+        const body = { _id: user._id, email: user.email };
+        const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        
+        res.json({
+            message: "Google authentication successful",
+            token: token,
+            user: {
+                _id: user._id,
+                email: user.email,
+                name: user.name,
+                profilePicture: user.profilePicture
+            }
+        });
+        
+    } catch (error) {
+        res.status(401).json({
+            message: "Google authentication failed",
+            error: error.message
+        });
+    }
+})
+
+authRouter.post('/oauth/mobile/apple', async (req, res) => {
+    try {
+        const { identityToken, authorizationCode } = req.body;
+        
+        // Verify Apple identity token
+        const jwt = require('jsonwebtoken');
+        const jwksClient = require('jwks-rsa');
+        
+        const client = jwksClient({
+            jwksUri: 'https://appleid.apple.com/auth/keys'
+        });
+        
+        function getKey(header, callback) {
+            client.getSigningKey(header.kid, (err, key) => {
+                const signingKey = key.publicKey || key.rsaPublicKey;
+                callback(null, signingKey);
+            });
+        }
+        
+        const decoded = await new Promise((resolve, reject) => {
+            jwt.verify(identityToken, getKey, {
+                audience: process.env.APPLE_CLIENT_ID,
+                issuer: 'https://appleid.apple.com'
+            }, (err, decoded) => {
+                if (err) reject(err);
+                else resolve(decoded);
+            });
+        });
+        
+        const { sub: appleId, email } = decoded;
+        
+        // Find or create user
+        let user = await UsersModel.findOne({ 
+            $or: [
+                { appleId: appleId },
+                { email: email }
+            ]
+        });
+        
+        if (!user) {
+            user = new UsersModel({
+                email: email,
+                appleId: appleId,
+                isEmailVerified: true, // Apple emails are pre-verified
+                provider: 'apple'
+            });
+            await user.save();
+        } else if (!user.appleId) {
+            // Link existing account with Apple
+            user.appleId = appleId;
+            user.isEmailVerified = true;
+            await user.save();
+        }
+        
+        const body = { _id: user._id, email: user.email };
+        const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        
+        res.json({
+            message: "Apple authentication successful",
+            token: token,
+            user: {
+                _id: user._id,
+                email: user.email,
+                appleId: user.appleId
+            }
+        });
+        
+    } catch (error) {
+        res.status(401).json({
+            message: "Apple authentication failed",
+            error: error.message
+        });
+    }
+});
+
+
 
 authRouter.post(
     '/resetPassword', 
@@ -311,6 +463,12 @@ authRouter.post(
     if (!user) {
       return res.status(404).json({
         message: 'No account found with that email address'
+      });
+    }
+
+     if (user.provider && user.provider !== 'local') {
+      return res.status(400).json({
+        message: `This account was created with ${user.provider}. Please sign in using ${user.provider} instead.`
       });
     }
     
@@ -375,6 +533,6 @@ authRouter.post(
       error: error.message
     });
   }
-});
+})
 
 module.exports = authRouter
