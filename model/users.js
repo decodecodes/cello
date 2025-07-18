@@ -15,6 +15,9 @@ const UserSchema = new Schema({
         type: String,
         minlength: [8, 'Password must contain more than 8 characters'],
         required: true,
+        required: function() {
+        return !this.isOAuthUser; // Only required for non-OAuth users
+            },
         validate: {
             validator: function(password) {
                 if (!/[A-Z]/.test(password)) {
@@ -38,7 +41,7 @@ const UserSchema = new Schema({
       return this.isOAuthUser;
     }
   },
-  profilePicture: {
+  profilePicture: { //
     type: String,
     default: null
   },
@@ -72,23 +75,26 @@ const UserSchema = new Schema({
     default: false
   }
 }, {
-  timestamps: true
+  timestamps: true,
+
+  resetToken: {
+    type: String
+},
+resetTokenExpiry: {
+    type: Date
+}
     
 })
 
         
 
 
-UserSchema.pre(
-    'save',
-    async function (next) {
-        const user = this;
-        const hash = await bcrypt.hash(this.password, 10)
-
-        this.password = hash;
-        next();
-    }
-);
+UserSchema.pre('save', async function (next) {
+    if (!this.isModified('password')) return next();
+    
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
+});
 
 UserSchema.methods.isValidPassword = async function(password) {
     const user = this;
