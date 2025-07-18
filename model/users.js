@@ -30,7 +30,18 @@ const UserSchema = new Schema({
             },
             message: 'Password must contain at least 1 capital letter, 1 number, and 1 special character'
         }
+    },
+    isEmailVerified: {
+        type: Boolean,
+        default: false
+    },
+    verificationCode: {
+        type: String
+    },
+    verificationCodeExpiry:{
+
     }
+    
 })
 
         
