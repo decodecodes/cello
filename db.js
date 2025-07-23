@@ -1,4 +1,4 @@
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb'); //dynamodb connection
 require('dotenv').config();
 
 let client;
