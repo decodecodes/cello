@@ -1,19 +1,14 @@
-const mongoose = require('mongoose');
-require("dotenv").config()
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+require('dotenv').config();
 
-const MONGO_DB_CONNECTION_URL = process.env.MONGO_DB_CONNECTION_URL
+let client;
 
-function connectDB(){
-    mongoose.connect(MONGO_DB_CONNECTION_URL)
-
-    mongoose.connection.on("connected", () => {
-        console.log("MongoDB Atlas connected successfully")
-  })
-
-  mongoose.connection.on("error", (err) => {
-        console.log("MongoDB Atlas NOT connected successfully")
-  })
-
+function connectDB() {
+  if (!client) {
+    client = new DynamoDBClient({ region: process.env.AWS_REGION });
+  }
+  console.log('Connected to DynamoDB');
+  return client;
 }
-    
-module.exports = { connectDB }
+
+module.exports = { connectDB, client: () => client };

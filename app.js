@@ -12,7 +12,7 @@ require("./authentication/auth")
 const PORT = process.env.PORT || 4000
 const app = express()
 
-// Connecting to Mongo DB Instance
+// Initialize DynamoDB client
 connectDB()
 
 
