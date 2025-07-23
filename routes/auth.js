@@ -189,7 +189,7 @@ const handleEmailVerification = async (email) => {
 
 const handleOAuthSuccess = async (req, res) => {
   try {
-    const body = { _id: req.user._id, email: req.user.email };
+    const body = { id: req.user.id, email: req.user.email };
     const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
     
     // Redirect to your frontend with token
@@ -252,7 +252,7 @@ authRouter.post(
                     async (error) => {
                         if (error) return next(error);
 
-                        const body = { _id: user._id, email: user.email };
+                        const body = { id: user.id, email: user.email };
                         const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
                         return res.json({ token });
@@ -283,12 +283,10 @@ authRouter.post('/oauth/mobile/google', async (req, res) => {
         const { sub: googleId, email, name, picture } = payload;
         
         // Find or create user
-        let user = await UsersModel.findOne({ 
-            $or: [
-                { googleId: googleId },
-                { email: email }
-            ]
-        });
+        let user = await UsersModel.findOne({ googleId: googleId });
+        if (!user) {
+            user = await UsersModel.findOne({ email: email });
+        }
         
         if (!user) {
             user = new UsersModel({
@@ -308,14 +306,14 @@ authRouter.post('/oauth/mobile/google', async (req, res) => {
             await user.save();
         }
         
-        const body = { _id: user._id, email: user.email };
+        const body = { id: user.id, email: user.email };
         const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
         
         res.json({
             message: "Google authentication successful",
             token: token,
             user: {
-                _id: user._id,
+                id: user.id,
                 email: user.email,
                 name: user.name,
                 profilePicture: user.profilePicture
@@ -362,12 +360,10 @@ authRouter.post('/oauth/mobile/apple', async (req, res) => {
         const { sub: appleId, email } = decoded;
         
         // Find or create user
-        let user = await UsersModel.findOne({ 
-            $or: [
-                { appleId: appleId },
-                { email: email }
-            ]
-        });
+        let user = await UsersModel.findOne({ appleId: appleId });
+        if (!user) {
+            user = await UsersModel.findOne({ email: email });
+        }
         
         if (!user) {
             user = new UsersModel({
@@ -384,14 +380,14 @@ authRouter.post('/oauth/mobile/apple', async (req, res) => {
             await user.save();
         }
         
-        const body = { _id: user._id, email: user.email };
+        const body = { id: user.id, email: user.email };
         const token = jwt.sign({ user: body }, process.env.JWT_SECRET, { expiresIn: '1h' });
         
         res.json({
             message: "Apple authentication successful",
             token: token,
             user: {
-                _id: user._id,
+                id: user.id,
                 email: user.email,
                 appleId: user.appleId
             }
@@ -413,12 +409,8 @@ authRouter.post(
     try {
         const { token, newPassword } = req.body;
         
-        const user = await UsersModel.findOne({
-            resetToken: token,
-            resetTokenExpiry: { $gt: Date.now() }
-        });
-        
-        if (!user) {
+        const user = await UsersModel.findOne({ resetToken: token });
+        if (!user || user.resetTokenExpiry <= Date.now()) {
             return res.status(400).json({
                 message: "Invalid or expired reset token"
             });
@@ -508,10 +500,9 @@ authRouter.post(
     
     const user = await UsersModel.findOne({
       email: email,
-      verificationCode: code.toUpperCase(),
-      verificationCodeExpiry: { $gt: Date.now() }
+      verificationCode: code.toUpperCase()
     });
-    if (!user) {
+    if (!user || user.verificationCodeExpiry <= Date.now()) {
       return res.status(400).json({
         message: "Invalid or expired verification code"
       });

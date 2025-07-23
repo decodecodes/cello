@@ -1,125 +1,95 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt')
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const bcrypt = require('bcrypt');
+const { v4: uuidv4 } = require('uuid');
+const { connectDB } = require('../db');
 
-const Schema = mongoose.Schema
+const TABLE_NAME = process.env.USERS_TABLE || 'users';
 
-const UserSchema = new Schema({
-    email: {
-        type: String,
-        required: true,
-        unique: true,
-        lowercase: true
-
-    },
-    password: {
-        type: String,
-        minlength: [8, 'Password must contain more than 8 characters'],
-        required: true,
-        required: function() {
-        return !this.isOAuthUser; // Only required for non-OAuth users
-            },
-        validate: {
-            validator: function(password) {
-                if (!/[A-Z]/.test(password)) {
-                    return false;
-                }
-                if (!/[0-9]/.test(password)) {
-                    return false;
-                }
-                if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-                    return false;
-                }
-                return true;
-            },
-            message: 'Password must contain at least 1 capital letter, 1 number, and 1 special character'
-        }
-    },
-   name: {
-    type: String,
-    required: function() {
-      // Name is required only for OAuth users (Google/Apple provide it)
-      return this.isOAuthUser;
-    }
-  },
-  profilePicture: { //
-    type: String,
-    default: null
-  },
-  // OAuth provider fields
-  googleId: {
-    type: String,
-    sparse: true
-  },
-  appleId: {
-    type: String,
-    sparse: true
-  },
-  signupMethod: {
-    type: String,
-    enum: ['manual', 'google', 'apple'],
-    default: 'manual'
-  },
-  isEmailVerified: {
-    type: Boolean,
-    default: false
-  },
-  verificationCode: {
-    type: String
-  },
-  verificationCodeExpiry: {
-    type: Date
-  },
-  // OAuth users are considered verified
-  isOAuthUser: {
-    type: Boolean,
-    default: false
+let docClient;
+function getClient() {
+  if (!docClient) {
+    const client = connectDB();
+    docClient = DynamoDBDocumentClient.from(client);
   }
-}, {
-  timestamps: true,
-
-  resetToken: {
-    type: String
-},
-resetTokenExpiry: {
-    type: Date
-}
-    
-})
-
-        
-
-
-UserSchema.pre('save', async function (next) {
-    if (!this.isModified('password')) return next();
-    
-    this.password = await bcrypt.hash(this.password, 10);
-    next();
-});
-
-UserSchema.methods.isValidPassword = async function(password) {
-    const user = this;
-    const compare = await bcrypt.compare(password, user.password);
-
-    return compare;
+  return docClient;
 }
 
-// Static method to find or create OAuth user
-UserSchema.statics.findOrCreateOAuthUser = async function(profile, provider) {
-  try {
-    const providerId = provider === 'google' ? 'googleId' : 'appleId';
-    
-    // First try to find user by provider ID
-    let user = await this.findOne({ [providerId]: profile.id });
-    
-    if (user) {
-      return { user, isNew: false };
+class User {
+  constructor(data) {
+    Object.assign(this, data);
+  }
+
+  async save() {
+    this.updatedAt = new Date().toISOString();
+    await getClient().send(new PutCommand({ TableName: TABLE_NAME, Item: this }));
+    return this;
+  }
+
+  async isValidPassword(password) {
+    return bcrypt.compare(password, this.password);
+  }
+
+  static async create(data) {
+    const user = new User({
+      id: uuidv4(),
+      ...data,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    if (user.password) {
+      user.password = await bcrypt.hash(user.password, 10);
     }
-    
-    // If not found, check if user exists with same email
-    user = await this.findOne({ email: profile.email });
-    
+    await user.save();
+    return user;
+  }
+
+  static async findOne(filter) {
+    const keys = Object.keys(filter);
+    if (keys.length === 1 && keys[0] === 'email') {
+      const { Item } = await getClient().send(
+        new GetCommand({ TableName: TABLE_NAME, Key: { email: filter.email } })
+      );
+      return Item ? new User(Item) : null;
+    }
+    let expression = '';
+    const names = {};
+    const values = {};
+    keys.forEach((key, idx) => {
+      expression += (idx ? ' AND ' : '') + `#${key} = :${key}`;
+      names['#' + key] = key;
+      values[':' + key] = filter[key];
+    });
+    const data = await getClient().send(
+      new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: expression,
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+        Limit: 1,
+      })
+    );
+    if (data.Items && data.Items.length > 0) {
+      return new User(data.Items[0]);
+    }
+    return null;
+  }
+
+  static async findOneAndUpdate(filter, update) {
+    const user = await User.findOne(filter);
+    if (!user) return null;
+    Object.assign(user, update);
+    await user.save();
+    return user;
+  }
+
+  static async findOrCreateOAuthUser(profile, provider) {
+    const providerId = provider === 'google' ? 'googleId' : 'appleId';
+    let user = await User.findOne({ [providerId]: profile.id });
+    if (user) return { user, isNew: false };
+
+    user = await User.findOne({ email: profile.email });
     if (user) {
-      // Link existing account with OAuth provider
       user[providerId] = profile.id;
       user.isOAuthUser = true;
       user.isEmailVerified = true;
@@ -129,30 +99,18 @@ UserSchema.statics.findOrCreateOAuthUser = async function(profile, provider) {
       await user.save();
       return { user, isNew: false };
     }
-    
-    // Create new user
-    user = new this({
+
+    user = await User.create({
       email: profile.email,
       name: profile.name,
       profilePicture: profile.picture || null,
       [providerId]: profile.id,
       signupMethod: provider,
       isOAuthUser: true,
-      isEmailVerified: true
+      isEmailVerified: true,
     });
-    
-    await user.save();
     return { user, isNew: true };
-    
-  } catch (error) {
-    throw new Error(`OAuth user creation failed: ${error.message}`);
   }
-};
+}
 
-
-const UserModel = mongoose.model('users', UserSchema);
-
-module.exports  = UserModel;
-
-
-
+module.exports = User;
